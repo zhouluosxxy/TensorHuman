@@ -54,7 +54,7 @@ Finally, run the data preprocessing script.
 ### `Train models`
 
 We used a GPU (NVIDIA RTX 4090) to train a model. 
-    python train.py --cfg configs/tensorhuman/zju_mocap/387/single_gpu.yaml
+    python train.py --cfg configs/human_nerf/zju_mocap/387/single_gpu.yaml
 
 ### `Render output`
 
@@ -62,13 +62,13 @@ Render the frame input (i.e., observed motion sequence).
 
     python run.py \
         --type movement \
-        --cfg configs/tensorhuman/zju_mocap/387/single_gpu.yaml 
+        --cfg configs/human_nerf/zju_mocap/387/single_gpu.yaml 
 
 Run free-viewpoint rendering on a particular frame (e.g., frame 128).
 
     python run.py \
         --type freeview \
-        --cfg configs/tensorhuman/zju_mocap/387/single_gpu.yaml \
+        --cfg configs/human_nerf/zju_mocap/387/single_gpu.yaml \
         freeview.frame_idx 128
 
 
@@ -76,4 +76,4 @@ Render the learned canonical appearance (T-pose).
 
     python run.py \
         --type tpose \
-        --cfg configs/tensorhuman/zju_mocap/387/single_gpu.yaml 
+        --cfg configs/human_nerf/zju_mocap/387/single_gpu.yaml 
