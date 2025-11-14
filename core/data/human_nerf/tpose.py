@@ -19,30 +19,30 @@ from configs import cfg
 
 
 class Dataset(torch.utils.data.Dataset):
-    RENDER_SIZE=512
+    RENDER_SIZE = 512
     CAM_PARAMS = {
         'radius': 6.0, 'focal': 1250.
     }
 
     def __init__(
-            self, 
+            self,
             dataset_path,
             keyfilter=None,
             bgcolor=None,
             src_type="zju_mocap",
             **_):
-        print('[Dataset Path]', dataset_path) 
+        print('[Dataset Path]', dataset_path)
 
         self.dataset_path = dataset_path
         self.image_dir = os.path.join(dataset_path, 'images')
 
         self.canonical_joints, self.canonical_bbox = \
             self.load_canonical_joints()
-            
+
         if 'motion_weights_priors' in keyfilter:
             self.motion_weights_priors = \
                 approx_gaussian_bone_volumes(
-                    self.canonical_joints, 
+                    self.canonical_joints,
                     self.canonical_bbox['min_xyz'],
                     self.canonical_bbox['max_xyz'],
                     grid_size=cfg.mweight_volume.volume_size).astype('float32')
@@ -52,7 +52,7 @@ class Dataset(torch.utils.data.Dataset):
 
         self.img_size = self.RENDER_SIZE
 
-        K, E = self.setup_camera(img_size = self.img_size, 
+        K, E = self.setup_camera(img_size=self.img_size,
                                  **self.CAM_PARAMS)
         self.camera = {
             'K': K,
@@ -62,13 +62,25 @@ class Dataset(torch.utils.data.Dataset):
         self.bgcolor = bgcolor if bgcolor is not None else [255., 255., 255.]
         self.keyfilter = keyfilter
 
+        # 加载 mesh_infos.pkl 并计算所有帧的平均 time
+        with open(os.path.join(dataset_path, 'mesh_infos.pkl'), 'rb') as f:
+            self.mesh_infos = pickle.load(f)
+
+        # 计算所有帧的 time 平均值
+        all_times = []
+        for idx in range(self.total_frames):
+            frame_name = f'frame_{idx:06d}'
+            time_value = self.mesh_infos[frame_name]['time']  # 假设是标量
+            all_times.append(float(time_value))  # 转换为 float
+        self.mean_time = torch.tensor(np.mean(all_times), dtype=torch.float32)
+
     @staticmethod
     def setup_camera(img_size, radius, focal):
         x = 0.
         y = -0.25
         z = radius
         campos = np.array([x, y, z], dtype='float32')
-        camrot = get_camrot(campos, 
+        camrot = get_camrot(campos,
                             lookat=np.array([0, y, 0.]),
                             inv_camera=True)
 
@@ -115,7 +127,7 @@ class Dataset(torch.utils.data.Dataset):
              [max_x, min_y, min_z],
              [max_x, min_y, max_z],
              [max_x, max_y, min_z],
-             [max_x, max_y, max_z],])
+             [max_x, max_y, max_z], ])
 
         rotated_bbox_pts = bbox_pts.dot(rmtx)
         rotated_bbox = {
@@ -144,10 +156,10 @@ class Dataset(torch.utils.data.Dataset):
         angle = 2 * np.pi / self.total_frames * idx
         add_rmtx = cv2.Rodrigues(np.array([0, -angle, 0], dtype='float32'))[0]
         root_rmtx = cv2.Rodrigues(dst_poses[:3])[0]
-        new_root_rmtx = add_rmtx@root_rmtx
+        new_root_rmtx = add_rmtx @ root_rmtx
         dst_poses[:3] = cv2.Rodrigues(new_root_rmtx)[0][:, 0]
 
-        # rotate boundinig box
+        # rotate bounding box
         dst_bbox = self.rotate_bbox(dst_bbox, add_rmtx)
 
         K = self.camera['K'].copy()
@@ -155,8 +167,8 @@ class Dataset(torch.utils.data.Dataset):
         R = E[:3, :3]
         T = E[:3, 3]
 
-        rays_o, rays_d = get_rays_from_KRT(H, W, K, R, T) 
-        rays_o = rays_o.reshape(-1, 3)# (H, W, 3) --> (N_rays, 3)
+        rays_o, rays_d = get_rays_from_KRT(H, W, K, R, T)
+        rays_o = rays_o.reshape(-1, 3)  # (H, W, 3) --> (N_rays, 3)
         rays_d = rays_d.reshape(-1, 3)
 
         # (selected N_samples, ), (selected N_samples, ), (N_samples, )
@@ -166,8 +178,8 @@ class Dataset(torch.utils.data.Dataset):
 
         near = near[:, None].astype('float32')
         far = far[:, None].astype('float32')
-    
-        batch_rays = np.stack([rays_o, rays_d], axis=0) 
+
+        batch_rays = np.stack([rays_o, rays_d], axis=0)
 
         if 'rays' in self.keyfilter:
             results.update({
@@ -181,14 +193,14 @@ class Dataset(torch.utils.data.Dataset):
 
         if 'motion_bases' in self.keyfilter:
             dst_Rs, dst_Ts = body_pose_to_body_RTs(
-                    dst_poses, dst_skel_joints
-                )
+                dst_poses, dst_skel_joints
+            )
             cnl_gtfms = get_canonical_global_tfms(self.canonical_joints)
             results.update({
                 'dst_Rs': dst_Rs,
                 'dst_Ts': dst_Ts,
                 'cnl_gtfms': cnl_gtfms
-            })                                    
+            })
 
         if 'motion_weights_priors' in self.keyfilter:
             results['motion_weights_priors'] = self.motion_weights_priors.copy()
@@ -204,11 +216,14 @@ class Dataset(torch.utils.data.Dataset):
             assert np.all(results['cnl_bbox_scale_xyz'] >= 0)
 
         if 'dst_posevec_69' in self.keyfilter:
-            # 1. ignore global orientation
-            # 2. add a small value to avoid all zeros
             dst_posevec_69 = dst_poses[3:] + 1e-2
             results.update({
                 'dst_posevec': dst_posevec_69,
             })
-        
+
+        if 'time' in self.keyfilter:
+            # 使用所有帧的平均 time
+            results['time'] = torch.ones_like(self.mean_time) * self.mean_time
+#            print(results['time'])
+
         return results
