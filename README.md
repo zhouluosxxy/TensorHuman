@@ -51,7 +51,7 @@ Finally, run the data preprocessing script.
     python prepare_dataset.py --cfg 387.yaml
     cd ../../
 
-### `Train/Download models`
+### `Train models`
 
 We used a GPU (NVIDIA RTX 4090) to train a model. 
     python train.py --cfg configs/tensorhuman/zju_mocap/387/single_gpu.yaml
